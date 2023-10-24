@@ -26,10 +26,12 @@ struct Header
 
 void createArchive(const char *outputFile, const char *inputFiles[], int numFiles);
 void extractArchive(const char *archiveFile, const char *outputDirectory);
+void deleteFile(const char *archiveFile, const char *fileName);
+void listFiles(const char *archiveFile);
 
 int main(int argc, char *argv[])
 {
-    if (argc < 4)
+    if (argc < 1)
     {
         fprintf(stderr, "Uso: %s <opciones> <archivoSalida> <archivo1> <archivo2> ... <archivoN>\n", argv[0]);
         exit(1);
@@ -56,13 +58,31 @@ int main(int argc, char *argv[])
     {
         extractArchive(archivoSalida, "./"); // Puedes especificar un directorio de salida
     }
-    // Otras operaciones como adición y eliminación de archivos pueden agregarse aquí.
+    else if (strcmp(opciones, "--delete") == 0)
+    {
+        // deleteFile(archivoSalida, archivos[0]);
+    }
+    else if (strcmp(opciones, "-t") == 0)
+    {
+        listFiles(archivoSalida);
+    }
+    else
+    {
+        fprintf(stderr, "Opción no válida: %s\n", opciones);
+        exit(1);
+    }
 
     return 0;
 }
 
 void createArchive(const char *outputFile, const char *inputFiles[], int numFiles)
 {
+    if (numFiles > MAX_FILES)
+    {
+        fprintf(stderr, "Error: el número máximo de archivos es %d\n", MAX_FILES);
+        exit(1);
+    }
+
     // Abre el archivo de salida en modo escritura
     int fd = open(outputFile, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
 
@@ -96,19 +116,21 @@ void createArchive(const char *outputFile, const char *inputFiles[], int numFile
         fileHeader.end = currentPos + fileHeader.size;
         fileHeader.deleted = 0; // Inicialmente no está marcado como eliminado
 
-        lseek(inputFile, 0, SEEK_SET);
+        lseek(inputFile, currentPos, SEEK_SET);
 
         // Escribe el archivo en el archivo empaquetado
-        char buffer[1024];
+        char buffer[fileHeader.size];
         ssize_t bytesRead;
         while ((bytesRead = read(inputFile, buffer, sizeof(buffer))) > 0)
         {
             write(fd, buffer, bytesRead);
         }
 
+        // Add a print statement to show what is being written
+        printf("Writing file: %s, size: %ld bytes\n", fileHeader.fileName, (long)fileHeader.size);
+
         // Agrega el archivo al encabezado
         header.fileList[i] = fileHeader;
-
         // Actualiza la posición actual
         currentPos = fileHeader.end;
 
@@ -146,7 +168,7 @@ void extractArchive(const char *archiveFile, const char *outputDirectory)
 
         // Construye la ruta completa para el archivo de salida
         char outputPath[MAX_FILENAME_LENGTH];
-        snprintf(outputPath, sizeof(outputPath), "%s/%s", outputDirectory, header.fileList[i].fileName);
+        // snprintf(outputPath, sizeof(outputPath), "%s/%s", outputDirectory, header.fileList[i].fileName);
 
         // Crea un nuevo archivo en el sistema de archivos
         int outputFile = open(outputPath, O_WRONLY | O_CREAT, header.fileList[i].mode);
@@ -166,6 +188,40 @@ void extractArchive(const char *archiveFile, const char *outputDirectory)
         }
 
         close(outputFile);
+    }
+
+    close(fd);
+}
+
+void listFiles(const char *archiveFile)
+{
+    // Abre el archivo empaquetado en modo lectura
+    int fd = open(archiveFile, O_RDONLY);
+
+    if (fd == -1)
+    {
+        perror("Error al abrir el archivo empaquetado");
+        exit(1);
+    }
+
+    // Lee el encabezado del archivo empaquetado
+    read(fd, &header, sizeof(struct Header));
+
+    // Itera a través de los archivos en el encabezado y muestra su información
+    for (int i = 0; i < MAX_FILES; i++)
+    {
+        if (header.fileList[i].fileName[0] == '\0')
+        {
+            continue; // Salta los archivos vacíos
+        }
+
+        printf("File Name: %s\n", header.fileList[i].fileName);
+        printf("File Size: %ld bytes\n", (long)header.fileList[i].size);
+        printf("File Mode: %o\n", header.fileList[i].mode);
+        printf("Start Position: %ld\n", (long)header.fileList[i].start);
+        printf("End Position: %ld\n", (long)header.fileList[i].end);
+        printf("Deleted: %s\n", header.fileList[i].deleted ? "Yes" : "No");
+        printf("\n");
     }
 
     close(fd);
