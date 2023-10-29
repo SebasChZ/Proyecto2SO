@@ -26,8 +26,8 @@ struct Header
 
 off_t currentPos = 0;
 
-void createArchive(const char *outputFile, const char *inputFiles[], int numFiles);
-void extractArchive(const char *archiveFile, const char *outputDirectory);
+void createArchive(const char *outputFile, const char *inputFiles[], int numFiles, int verbose);
+void extractArchive(const char *archiveFile, const char *outputDirectory, int verbose);
 void deleteFile(const char *archiveFile, const char *fileName);
 void listFiles(const char *archiveFile);
 void readData(const char *archiveFile);
@@ -57,14 +57,30 @@ int main(int argc, char *argv[])
     {
         archivos[i] = argv[i + 3];
     }
-
-    if (strcmp(opciones, "-cvf") == 0)
+    
+    if (argc > 1)
     {
-        createArchive(archivoSalida, archivos, numArchivos);
+        int len = strlen(opciones);
+        for (int i = len - 1; i >= 0; i--)
+        {
+            if (opciones[i] == 'v')
+            {
+                verbose++;
+            }
+            else
+            {
+                break;
+            }
+        }
     }
-    else if (strcmp(opciones, "-xvf") == 0)
+
+    if (strcmp(opciones, "-c") == 0 || strcmp(opciones, "-cv") == 0 || strcmp(opciones, "-cvv") == 0)
     {
-        extractArchive(archivoSalida, "./"); // Puedes especificar un directorio de salida
+        createArchive(archivoSalida, archivos, numArchivos, verbose);
+    }
+    else if (strcmp(opciones, "-x") == 0 || strcmp(opciones, "-xv") == 0 || strcmp(opciones, "-xvv") == 0)
+    {
+        extractArchive(archivoSalida, "./", verbose); // Puedes especificar un directorio de salida
     }
     else if (strcmp(opciones, "--delete") == 0)
     {
@@ -259,7 +275,7 @@ void printHeader()
     }
 }
 
-void createArchive(const char *outputFile, const char *inputFiles[], int numFiles)
+void createArchive(const char *outputFile, const char *inputFiles[], int numFiles, int verbose)
 {
     printf("\n \t CREATE TAR FILE \n");
     if (numFiles > MAX_FILES)
@@ -272,7 +288,7 @@ void createArchive(const char *outputFile, const char *inputFiles[], int numFile
     addFileContent(outputFile, inputFiles, numFiles);
 }
 
-void extractArchive(const char *archiveFile, const char *outputDirectory)
+void extractArchive(const char *archiveFile, const char *outputDirectory, int verbose)
 {
     // Abre el archivo empaquetado en modo lectura
     int fd = open(archiveFile, O_RDONLY);
@@ -287,6 +303,12 @@ void extractArchive(const char *archiveFile, const char *outputDirectory)
     read(fd, &header, sizeof(struct Header));
 
     // Itera a través de los archivos a extraer
+    if (verbose >= 1)
+    {
+        printf("Extracting files from %s\n", archiveFile);
+    }
+    int numFilesExtracted = 0;
+
     for (int i = 0; i < MAX_FILES; i++)
     {
         if (header.fileList[i].fileName[0] == '\0' || header.fileList[i].deleted)
@@ -297,7 +319,17 @@ void extractArchive(const char *archiveFile, const char *outputDirectory)
         // Construye la ruta completa para el archivo de salida
         char outputPath[1024]; // Aumentar el tamaño del búfer
         snprintf(outputPath, sizeof(outputPath), "%s/%s", outputDirectory, header.fileList[i].fileName);
-
+        if (verbose >= 1)
+        {
+            printf("Extracting file: %s\n", header.fileList[i].fileName);
+        }
+        
+        if (verbose >= 2)
+        {
+            printf("File Size: %ld bytes\n", (long)header.fileList[i].size);
+            printf("Start Position: %ld\n", (long)header.fileList[i].start);
+            printf("End Position: %ld\n", (long)header.fileList[i].end);
+        }
         // Crea un nuevo archivo en el sistema de archivos
         int outputFile = open(outputPath, O_WRONLY | O_CREAT, header.fileList[i].mode);
 
@@ -317,9 +349,23 @@ void extractArchive(const char *archiveFile, const char *outputDirectory)
         }
 
         close(outputFile);
+        numFilesExtracted++;
+        if (verbose >= 1)
+        {
+            printf("Extracted file: %s\n", header.fileList[i].fileName);
+        }
     }
 
     close(fd);
+    if (verbose >= 1)
+    {
+        printf("Extraction complete from %s\n", archiveFile);
+    }
+
+    if (verbose >= 2)
+    {
+        printf("Total files extracted: %d\n", numFilesExtracted);
+    }
 }
 
 void deleteFile(const char *archiveFile, const char *fileName)
