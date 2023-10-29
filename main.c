@@ -31,14 +31,11 @@ void extractArchive(const char *archiveFile, const char *outputDirectory, int ve
 void deleteFile(const char *archiveFile, const char *fileName);
 void listFiles(const char *archiveFile);
 void readData(const char *archiveFile);
-void addHeader(int numFiles, int outputFile, const char *fileNames[]);
-void addHeader_Aux(struct FileHeader newFile, int index);
-void addFileContent(const char *outputFileName, const char *fileNames[], int numFiles);
+void addHeader(int numFiles, int outputFile, const char *fileNames[], int verbose);
+void addHeader_Aux(struct FileHeader newFile);
+void addFileContent(const char *outputFileName, const char *fileNames[], int numFiles, int verbose);
 struct FileHeader getHeader(const char *tarFileName, const char *fileName);
 int openFile(const char *fileName, int mode);
-void appendFile(const char *archiveFile, const char *fileName);
-int getNextHeader(int index);
-int findSpaceForFile(struct FileHeader newFile);
 
 int main(int argc, char *argv[])
 {
@@ -96,10 +93,6 @@ int main(int argc, char *argv[])
     else if (strcmp(opciones, "-r") == 0)
     {
         readData(archivoSalida);
-    }
-    else if (strcmp(opciones, "-rvf") == 0)
-    {
-        appendFile(archivoSalida, archivos[0]);
     }
     else
     {
@@ -194,7 +187,7 @@ struct FileHeader getHeader(const char *tarFileName, const char *fileName)
     exit(1);
 }
 
-void addFileContent(const char *outputFileName, const char *fileNames[], int numFiles)
+void addFileContent(const char *outputFileName, const char *fileNames[], int numFiles, int verbose)
 {
     int outputFile = open(outputFileName, 1);
     for (int i = 0; i < numFiles; i++)
@@ -204,7 +197,7 @@ void addFileContent(const char *outputFileName, const char *fileNames[], int num
         int file = openFile(fileNames[i], 0);
         if (verbose >= 1)
         {
-            printf("Adding file: %s\n", fileName);
+            printf("Adding file: %s\n", fileNames[i]);
         }                                 // Abre el archivo que se va a escribir en el tar
         struct FileHeader fileInfo = getHeader(outputFileName, fileNames[i]); // Encuentra el archivo en el header
         if (verbose >= 2)
@@ -227,26 +220,19 @@ void addFileContent(const char *outputFileName, const char *fileNames[], int num
     }
 }
 
-void addHeader_Aux(struct FileHeader newFile, int index)
+void addHeader_Aux(struct FileHeader newFile)
 {
-    if (index == 0)
+    for (int i = 0; i < MAX_FILES; i++)
     {
-        for (int i = 0; i < MAX_FILES; i++)
-        {
-            if (header.fileList[i].size == 0)
-            { // Posicion vacia
-                header.fileList[i] = newFile;
-                break;
-            }
+        if (header.fileList[i].size == 0)
+        { // Posicion vacia
+            header.fileList[i] = newFile;
+            break;
         }
-    }
-    else
-    {
-        header.fileList[index] = newFile;
     }
 }
 
-void addHeader(int numFiles, int outputFile, const char *fileNames[])
+void addHeader(int numFiles, int outputFile, const char *fileNames[], int verbose)
 {
     const char *filename;
     struct FileHeader fileHeader;
@@ -276,7 +262,7 @@ void addHeader(int numFiles, int outputFile, const char *fileNames[])
         else
             fileHeader.start = currentPos;
         fileHeader.end = currentPos = fileHeader.start + fileStat.st_size;
-        addHeader_Aux(fileHeader, 0);
+        addHeader_Aux(fileHeader);
         if (verbose >= 2)
         {
             printf("File Size: %ld bytes\n", (long)fileHeader.size);
@@ -326,13 +312,13 @@ void createArchive(const char *outputFile, const char *inputFiles[], int numFile
         printf("Adding files to the TAR archive:\n");
     }
 
-    addHeader(numFiles, openFile(outputFile, 1), inputFiles);
+    addHeader(numFiles, openFile(outputFile, 1), inputFiles, verbose);
     if (verbose >= 2)
     {
         printHeader();
     }
     printHeader();
-    addFileContent(outputFile, inputFiles, numFiles);
+    addFileContent(outputFile, inputFiles, numFiles, verbose);
     if (verbose >= 1)
     {
         printf("TAR file created successfully: %s\n", outputFile);
@@ -356,7 +342,7 @@ void extractArchive(const char *archiveFile, const char *outputDirectory, int ve
     // Itera a través de los archivos a extraer
     if (verbose >= 1)
     {
-        printf("Extracting files from %s\n", archiveFile);
+        printf("Extracting files from %s\n\n", archiveFile);
     }
     int numFilesExtracted = 0;
 
@@ -403,7 +389,7 @@ void extractArchive(const char *archiveFile, const char *outputDirectory, int ve
         numFilesExtracted++;
         if (verbose >= 1)
         {
-            printf("Extracted file: %s\n", header.fileList[i].fileName);
+            printf("Extracted file: %s\n\n", header.fileList[i].fileName);
         }
     }
 
@@ -553,301 +539,5 @@ void readData(const char *archiveFile)
         write(STDOUT_FILENO, buffer, bytesRead);
     }
 
-    close(fd);
-}
-
-int getNextHeader(int index)
-{
-    for (int i = index + 1; i < MAX_FILES; i++)
-    {
-        if (header.fileList[i].fileName[0] == '\0')
-        {
-
-            printf("Empty header: %d\n", i);
-            continue; // Salta los archivos vacíos
-        }
-        else
-        {
-            printf("get Next header: %d\n", i);
-            return i;
-        }
-    }
-    return -1; // No more headers
-}
-
-// Encuentra el primer espacio adecuado en el header para colocar el nuevo archivo
-int findSpaceForFile(struct FileHeader newFile)
-{
-    for (int i = 0; i < MAX_FILES; i++)
-    {
-        printf("Finding space...\n");
-        if (header.fileList[i].fileName[0] == '\0')
-        {
-            int nextHeaderIndex = getNextHeader(i);
-            if (nextHeaderIndex == -1)
-            {
-                printf("No more headers\n");
-                return i;
-            }
-            else
-            {
-                off_t spaceAvailable = header.fileList[nextHeaderIndex].start - 13600;
-                if (spaceAvailable >= newFile.size)
-                {
-                    printf("Se encontró espacio en el header %d con: %ld espacio\n", i + 1, spaceAvailable);
-                    return i;
-                }
-                else
-                {
-                    i = nextHeaderIndex;
-                }
-            }
-        }
-        else
-        {
-            if (header.fileList[i + 1].fileName[0] == '\0')
-            {
-                printf("Next header is empty: %d\n", i + 1);
-                int nextHeaderIndex = getNextHeader(i);
-                printf("Next header: %d\n", nextHeaderIndex);
-                if (nextHeaderIndex == -1)
-                {
-                    printf("No more headers\n");
-                    return i + 1;
-                }
-                else
-                {
-                    off_t spaceAvailable = header.fileList[nextHeaderIndex].start - header.fileList[i].end;
-                    printf("Space available: %ld\n", spaceAvailable);
-                    printf("New file size: %ld\n", newFile.size);
-                    if (spaceAvailable >= newFile.size)
-                    {
-                        printf("Se encontró espacio en el header %d con: %ld espacio\n", i + 1, spaceAvailable);
-                        return i + 1;
-                    }
-                    else
-                    {
-                        i = nextHeaderIndex;
-                    }
-                }
-            }
-            else
-            {
-                continue;
-            }
-        }
-    }
-    return -1; // No se encontró espacio adecuado
-}
-
-void updateHeader(const char *archiveFile, struct Header *updatedHeader)
-{
-    // Open the archive file in read-write mode
-    int fd = open(archiveFile, O_RDWR);
-
-    if (fd == -1)
-    {
-        perror("Error opening the archive file");
-        exit(1);
-    }
-
-    // Find gaps between consecutive files
-    for (int i = 0; i < MAX_FILES - 1; i++)
-    {
-        if (updatedHeader->fileList[i].fileName[0] != '\0' && updatedHeader->fileList[i + 1].fileName[0] != '\0')
-        {
-            off_t spaceBetweenFiles = updatedHeader->fileList[i + 1].start - updatedHeader->fileList[i].end;
-            if (spaceBetweenFiles > 0)
-            {
-                // Check if there is an empty header between the two files
-                int emptyHeaderBetween = 0;
-                for (int j = i + 1; j < MAX_FILES && updatedHeader->fileList[j].fileName[0] != '\0'; j++)
-                {
-                    if (updatedHeader->fileList[j].fileName[0] == '\0')
-                    {
-                        emptyHeaderBetween = 1;
-                        break;
-                    }
-                }
-
-                // If there is no empty header between the two files, create a gap
-                if (!emptyHeaderBetween)
-                {
-                    memmove(&updatedHeader->fileList[i + 2], &updatedHeader->fileList[i + 1], sizeof(struct FileHeader) * (MAX_FILES - i - 2));
-                    memset(&updatedHeader->fileList[i + 1], 0, sizeof(struct FileHeader));
-
-                    // Update the start and end of the new empty header
-                    updatedHeader->fileList[i + 1].start = updatedHeader->fileList[i].end;
-                    updatedHeader->fileList[i + 1].end = updatedHeader->fileList[i + 1].start;
-                }
-            }
-        }
-    }
-
-    // Write the updated header back to the archive file
-    lseek(fd, 0, SEEK_SET);
-    if (write(fd, updatedHeader, sizeof(struct Header)) != sizeof(struct Header))
-    {
-        perror("Error writing the header to the archive file");
-        close(fd);
-        exit(1);
-    }
-
-    close(fd);
-}
-
-void updateContent(const char *archiveFile, const char *fileName)
-{
-    // Open the archive file in read-write mode
-    int fd = open(archiveFile, O_RDWR);
-    if (fd == -1)
-    {
-        perror("Error opening archive file");
-        exit(1);
-    }
-
-    // Read the header from the archive file
-    struct Header header;
-    if (read(fd, &header, sizeof(struct Header)) != sizeof(struct Header))
-    {
-        perror("Error reading header from archive file");
-        close(fd);
-        exit(1);
-    }
-
-    // Find the header for the specified file
-    struct FileHeader *fileHeader = NULL;
-    for (int i = 0; i < MAX_FILES; i++)
-    {
-        if (strcmp(header.fileList[i].fileName, fileName) == 0)
-        {
-            fileHeader = &header.fileList[i];
-            break;
-        }
-    }
-
-    if (fileHeader == NULL)
-    {
-        fprintf(stderr, "File %s not found in archive\n", fileName);
-        close(fd);
-        exit(1);
-    }
-
-    // Open the file to be added to the archive
-    int fileFd = open(fileName, O_RDONLY);
-    if (fileFd == -1)
-    {
-        perror("Error opening file to be added");
-        close(fd);
-        exit(1);
-    }
-
-    // Move to the start position of the file in the archive
-    if (lseek(fd, fileHeader->start, SEEK_SET) == -1)
-    {
-        perror("Error seeking in archive file");
-        close(fd);
-        close(fileFd);
-        exit(1);
-    }
-
-    // Copy the content of the file to the archive
-    char buffer[4096];
-    ssize_t bytesRead;
-    ssize_t bytesWritten;
-    size_t totalBytesWritten = 0;
-    while ((bytesRead = read(fileFd, buffer, sizeof(buffer))) > 0)
-    {
-        bytesWritten = write(fd, buffer, bytesRead);
-        if (bytesWritten == -1)
-        {
-            perror("Error writing to archive file");
-            close(fd);
-            close(fileFd);
-            exit(1);
-        }
-        totalBytesWritten += bytesWritten;
-        if (totalBytesWritten > fileHeader->size)
-        {
-            fprintf(stderr, "File %s is larger than its header size\n", fileName);
-            close(fd);
-            close(fileFd);
-            exit(1);
-        }
-    }
-    if (bytesRead == -1)
-    {
-        perror("Error reading from file to be added");
-        close(fd);
-        close(fileFd);
-        exit(1);
-    }
-
-    // If the file is smaller than its header size, fill the remaining space with zeros
-    if (totalBytesWritten < fileHeader->size)
-    {
-        size_t remainingBytes = fileHeader->size - totalBytesWritten;
-        memset(buffer, 0, remainingBytes);
-        if (write(fd, buffer, remainingBytes) == -1)
-        {
-            perror("Error writing to archive file");
-            close(fd);
-            close(fileFd);
-            exit(1);
-        }
-    }
-
-    close(fd);
-    close(fileFd);
-}
-
-void appendFile(const char *archiveFile, const char *fileName)
-{
-    struct FileHeader newFile;
-    struct stat fileStat;
-    if (lstat(fileName, &fileStat) == -1)
-    {
-        perror("Error al obtener información del archivo");
-        exit(1);
-    }
-
-    newFile.deleted = 0;
-    newFile.mode = fileStat.st_mode;
-    newFile.size = fileStat.st_size;
-
-    // Abre el archivo empaquetado en modo lectura
-    int fd = open(archiveFile, O_RDONLY);
-
-    if (fd == -1)
-    {
-        perror("Error al abrir el archivo empaquetado");
-        exit(1);
-    }
-
-    // Lee el encabezado del archivo empaquetado
-    read(fd, &header, sizeof(struct Header));
-
-    int spaceIndex = findSpaceForFile(newFile);
-    int prevHeaderIndex = spaceIndex - 1;
-    if (spaceIndex != -1)
-    {
-        printf("Se va a colocar en espacio: %d\n", spaceIndex);
-        newFile.start = header.fileList[prevHeaderIndex].end;
-        newFile.end = newFile.start + newFile.size;
-        strncpy(newFile.fileName, fileName, MAX_FILENAME_LENGTH);
-        addHeader_Aux(newFile, spaceIndex);
-
-        printHeader();
-
-        // Update the header in the archive file
-        updateHeader(archiveFile, &header);
-
-        printHeader();
-
-        updateContent(archiveFile, fileName);
-    }
-    else
-    {
-        printf("No hay espacio para el archivo\n");
-    }
+    close(fd);
 }
