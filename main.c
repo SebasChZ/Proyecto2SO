@@ -50,7 +50,7 @@ int main(int argc, char *argv[])
 
     // Calcula el número de archivos a empaquetar
     int numArchivos = argc - 3;
-
+    int verbose = 0;
     // Lista de nombres de archivos a empaquetar
     const char *archivos[numArchivos];
     for (int i = 0; i < numArchivos; i++)
@@ -194,8 +194,16 @@ void addFileContent(const char *outputFileName, const char *fileNames[], int num
     {
         struct stat fileStat;
 
-        int file = openFile(fileNames[i], 0);                                 // Abre el archivo que se va a escribir en el tar
+        int file = openFile(fileNames[i], 0);
+        if (verbose >= 1)
+        {
+            printf("Adding file: %s\n", fileName);
+        }                                 // Abre el archivo que se va a escribir en el tar
         struct FileHeader fileInfo = getHeader(outputFileName, fileNames[i]); // Encuentra el archivo en el header
+        if (verbose >= 2)
+        {
+            printf("File Size: %ld bytes\n", (long)fileInfo.size);
+        }
         char buffer[fileInfo.size];                                           // Buffer para guardar el contenido del archivo a guardar
         read(file, buffer, sizeof(buffer));                                   // Lee el contenido del archivo y lo guarda en el buffer
         int outputFile = openFile(outputFileName, 0);
@@ -242,6 +250,10 @@ void addHeader(int numFiles, int outputFile, const char *fileNames[])
 
         strncpy(fileHeader.fileName, filename, MAX_FILENAME_LENGTH);
         fileHeader.mode = fileStat.st_mode; // Puedes ajustar el modo según tus necesidades
+        if (verbose >= 1)
+        {
+            printf("Adding file to the archive: %s\n", filename);
+        }
         fileHeader.size = fileStat.st_size;
         fileHeader.deleted = 0; // Inicialmente no está marcado como eliminado
 
@@ -251,6 +263,10 @@ void addHeader(int numFiles, int outputFile, const char *fileNames[])
             fileHeader.start = currentPos;
         fileHeader.end = currentPos = fileHeader.start + fileStat.st_size;
         addHeader_Aux(fileHeader);
+        if (verbose >= 2)
+        {
+            printf("File Size: %ld bytes\n", (long)fileHeader.size);
+        }
     }
 
     char headerBlock[sizeof(header)];
@@ -261,6 +277,11 @@ void addHeader(int numFiles, int outputFile, const char *fileNames[])
         exit(1);
     }
     close(outputFile);
+    if (verbose >= 1)
+    {
+        printf("Header added to the archive.\n");
+    }
+
 }
 
 void printHeader()
@@ -277,15 +298,31 @@ void printHeader()
 
 void createArchive(const char *outputFile, const char *inputFiles[], int numFiles, int verbose)
 {
-    printf("\n \t CREATE TAR FILE \n");
+    if (verbose >= 1)
+    {
+        printf("\nCreating TAR file: %s\n", outputFile);
+    }
     if (numFiles > MAX_FILES)
     {
         fprintf(stderr, "Error: el número máximo de archivos es %d\n", MAX_FILES);
         exit(1);
     }
+    if (verbose >= 1)
+    {
+        printf("Adding files to the TAR archive:\n");
+    }
+
     addHeader(numFiles, openFile(outputFile, 1), inputFiles);
+    if (verbose >= 2)
+    {
+        printHeader();
+    }
     printHeader();
     addFileContent(outputFile, inputFiles, numFiles);
+    if (verbose >= 1)
+    {
+        printf("TAR file created successfully: %s\n", outputFile);
+    }
 }
 
 void extractArchive(const char *archiveFile, const char *outputDirectory, int verbose)
