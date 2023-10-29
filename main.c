@@ -34,6 +34,7 @@ void readData(const char *archiveFile);
 void addHeader(int numFiles, int outputFile, const char *fileNames[], int verbose);
 void addHeader_Aux(struct FileHeader newFile,int index);
 void addFileContent(const char *outputFileName, const char *fileNames[], int numFiles, int verbose);
+void appendFile(const char *archiveFile, const char *fileName, int verbose);
 struct FileHeader getHeader(const char *tarFileName, const char *fileName);
 int openFile(const char *fileName, int mode);
 
@@ -90,9 +91,13 @@ int main(int argc, char *argv[])
     {
         listFiles(archivoSalida);
     }
-    else if (strcmp(opciones, "-r") == 0)
+    else if (strcmp(opciones, "-rvf") == 0 || strcmp(opciones, "-rv") == 0 || strcmp(opciones, "-rvv") == 0)
     {
-        readData(archivoSalida);
+        appendFile(archivoSalida, archivos[0], verbose);
+    }
+    else if (strcmp(opciones, "-uvf") == 0 || strcmp(opciones, "-uv") == 0 || strcmp(opciones, "-uvv") == 0)
+    {
+        //updateFile(archivoSalida, archivos[0]);
     }
     else
     {
@@ -563,12 +568,12 @@ int getNextHeader(int index)
         if (header.fileList[i].fileName[0] == '\0')
         {
 
-            printf("Empty header: %d\n", i);
+            //printf("Empty header: %d\n", i);
             continue; // Salta los archivos vacíos
         }
         else
         {
-            printf("get Next header: %d\n", i);
+            //printf("get Next header: %d\n", i);
             return i;
         }
     }
@@ -580,7 +585,7 @@ int findSpaceForFile(struct FileHeader newFile, int verbose)
 {
     for (int i = 0; i < MAX_FILES; i++)
     {
-        printf("Finding space...\n");
+        //printf("Finding space...\n");
         if (header.fileList[i].fileName[0] == '\0')
         {
             int nextHeaderIndex = getNextHeader(i);
@@ -610,23 +615,18 @@ int findSpaceForFile(struct FileHeader newFile, int verbose)
         {
             if (header.fileList[i + 1].fileName[0] == '\0')
             {
-                printf("Next header is empty: %d\n", i + 1);
+                //printf("Next header is empty: %d\n", i + 1);
                 int nextHeaderIndex = getNextHeader(i);
-                printf("Next header: %d\n", nextHeaderIndex);
+                //printf("Next header: %d\n", nextHeaderIndex);
                 if (nextHeaderIndex == -1)
                 {
-                    printf("No more headers\n");
+                    //printf("No more headers\n");
                     return i + 1;
                 }
                 else
                 {
                     off_t spaceAvailable = header.fileList[nextHeaderIndex].start - header.fileList[i].end;
-                    if (verbose > 1)
-                    {
-                        printf("Space available: %ld\n", spaceAvailable);
-                        printf("New file size: %ld\n", newFile.size);
-                    }
-                    
+
                     
                     if (spaceAvailable >= newFile.size)
                     {
@@ -831,7 +831,7 @@ void appendFile(const char *archiveFile, const char *fileName, int verbose)
         exit(1);
     }
     if (verbose >= 1) {
-        printf("Agregarndo archivo: %s\n", fileName);
+        printf("Appending File: %s\n", fileName);
     }
 
     // Lee el encabezado del archivo empaquetado
@@ -849,15 +849,13 @@ void appendFile(const char *archiveFile, const char *fileName, int verbose)
         strncpy(newFile.fileName, fileName, MAX_FILENAME_LENGTH);
         addHeader_Aux(newFile, spaceIndex);
         if (verbose >= 2) {
-        printf("Colocado en el espacio: %d\n", spaceIndex);
+        printf("Placed on index: %d\n", spaceIndex);
          }
 
-        printHeader();
 
         // Update the header in the archive file
         updateHeader(archiveFile, &header);
 
-        printHeader();
 
         updateContent(archiveFile, fileName);
     }
