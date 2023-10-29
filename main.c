@@ -1,5 +1,5 @@
 #include <stdio.h>
-//#include <stdlib.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -82,7 +82,7 @@ int main(int argc, char *argv[])
     {
         extractArchive(archivoSalida, "./", verbose); // Puedes especificar un directorio de salida
     }
-    else if (strcmp(opciones, "--delete") == 0)
+    else if (strcmp(opciones, "--d") == 0 || strcmp(opciones, "--dv") == 0 || strcmp(opciones, "--dvv") == 0 || strcmp(opciones, "--dvf") == 0)
     {
         deleteFile(archivoSalida, archivos[0], verbose);
     }
@@ -444,7 +444,7 @@ void deleteFile(const char *archiveFile, const char *fileName, int verbose)
         exit(1);
     }
     if (verbose >= 1) {
-        printf("Eliminando archivo: %s\n", fileName);
+        printf("Deleting file: %s\n", fileName);
     }
 
     // Marca el archivo como eliminado en el encabezado
@@ -455,7 +455,7 @@ void deleteFile(const char *archiveFile, const char *fileName, int verbose)
     off_t end = header.fileList[fileIndex].end;
     size_t fileSize = end - start;
     if (verbose >= 2) {
-        printf("Tamaño del archivo a eliminar: %zu bytes\n", fileSize);
+        printf("File size: %zu bytes\n", fileSize);
     }
     // Buffer de ceros del mismo tamaño que el archivo
     char *zeroBuffer = (char *)malloc(fileSize);
@@ -483,6 +483,9 @@ void deleteFile(const char *archiveFile, const char *fileName, int verbose)
     write(fd, &header, sizeof(struct Header));
 
     close(fd);
+    if (verbose >=1 ) {
+        printf("File deleted: %s\n", fileName);
+    }
 }
 
 void listFiles(const char *archiveFile)
@@ -834,7 +837,7 @@ void appendFile(const char *archiveFile, const char *fileName, int verbose)
     // Lee el encabezado del archivo empaquetado
     read(fd, &header, sizeof(struct Header));
 
-    int spaceIndex = findSpaceForFile(newFile);
+    int spaceIndex = findSpaceForFile(newFile, verbose);
     int prevHeaderIndex = spaceIndex - 1;
     if (spaceIndex != -1)
     {
