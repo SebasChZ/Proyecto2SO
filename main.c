@@ -32,10 +32,16 @@ void deleteFile(const char *archiveFile, const char *fileName);
 void listFiles(const char *archiveFile);
 void readData(const char *archiveFile);
 void addHeader(int numFiles, int outputFile, const char *fileNames[], int verbose);
-void addHeader_Aux(struct FileHeader newFile,int index);
+void addHeader_Aux(struct FileHeader newFile, int index);
 void addFileContent(const char *outputFileName, const char *fileNames[], int numFiles, int verbose);
 struct FileHeader getHeader(const char *tarFileName, const char *fileName);
 int openFile(const char *fileName, int mode);
+void updateFile(const char *archiveFile, const char *fileName);
+void appendFile(const char *archiveFile, const char *fileName);
+void updateHeader(const char *archiveFile, struct Header *updatedHeader);
+void updateContent(const char *archiveFile, const char *fileName);
+int findSpaceForFile(struct FileHeader newFile);
+int getNextHeader(int index);
 
 int main(int argc, char *argv[])
 {
@@ -57,7 +63,7 @@ int main(int argc, char *argv[])
     {
         archivos[i] = argv[i + 3];
     }
-    
+
     if (argc > 1)
     {
         int len = strlen(opciones);
@@ -74,11 +80,11 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (strcmp(opciones, "-c") == 0 || strcmp(opciones, "-cv") == 0 || strcmp(opciones, "-cvv") == 0)
+    if (strcmp(opciones, "-c") == 0 || strcmp(opciones, "-cv") == 0 || strcmp(opciones, "-cvv") == 0 || strcmp(opciones, "-cvf") == 0)
     {
         createArchive(archivoSalida, archivos, numArchivos, verbose);
     }
-    else if (strcmp(opciones, "-x") == 0 || strcmp(opciones, "-xv") == 0 || strcmp(opciones, "-xvv") == 0)
+    else if (strcmp(opciones, "-x") == 0 || strcmp(opciones, "-xv") == 0 || strcmp(opciones, "-xvv") == 0 || strcmp(opciones, "-xvf") == 0)
     {
         extractArchive(archivoSalida, "./", verbose); // Puedes especificar un directorio de salida
     }
@@ -93,6 +99,14 @@ int main(int argc, char *argv[])
     else if (strcmp(opciones, "-r") == 0)
     {
         readData(archivoSalida);
+    }
+    else if (strcmp(opciones, "-rvf") == 0 || strcmp(opciones, "-rv") == 0 || strcmp(opciones, "-rvv") == 0)
+    {
+        appendFile(archivoSalida, archivos[0]);
+    }
+    else if (strcmp(opciones, "-uvf") == 0 || strcmp(opciones, "-uv") == 0 || strcmp(opciones, "-uvv") == 0)
+    {
+        updateFile(archivoSalida, archivos[0]);
     }
     else
     {
@@ -198,14 +212,14 @@ void addFileContent(const char *outputFileName, const char *fileNames[], int num
         if (verbose >= 1)
         {
             printf("Adding file: %s\n", fileNames[i]);
-        }                                 // Abre el archivo que se va a escribir en el tar
+        }                                                                     // Abre el archivo que se va a escribir en el tar
         struct FileHeader fileInfo = getHeader(outputFileName, fileNames[i]); // Encuentra el archivo en el header
         if (verbose >= 2)
         {
             printf("File Size: %ld bytes\n", (long)fileInfo.size);
         }
-        char buffer[fileInfo.size];                                           // Buffer para guardar el contenido del archivo a guardar
-        read(file, buffer, sizeof(buffer));                                   // Lee el contenido del archivo y lo guarda en el buffer
+        char buffer[fileInfo.size];         // Buffer para guardar el contenido del archivo a guardar
+        read(file, buffer, sizeof(buffer)); // Lee el contenido del archivo y lo guarda en el buffer
         int outputFile = openFile(outputFileName, 0);
         lseek(outputFile, fileInfo.start, SEEK_SET); // Coloca el puntero del tar donde de escribir.
 
@@ -288,7 +302,6 @@ void addHeader(int numFiles, int outputFile, const char *fileNames[], int verbos
     {
         printf("Header added to the archive.\n");
     }
-
 }
 
 void printHeader()
@@ -367,7 +380,7 @@ void extractArchive(const char *archiveFile, const char *outputDirectory, int ve
         {
             printf("Extracting file: %s\n", header.fileList[i].fileName);
         }
-        
+
         if (verbose >= 2)
         {
             printf("File Size: %ld bytes\n", (long)header.fileList[i].size);
@@ -842,4 +855,77 @@ void appendFile(const char *archiveFile, const char *fileName)
     {
         printf("No hay espacio para el archivo\n");
     }
+}
+
+void updateFile(const char *archiveFile, const char *fileName)
+{
+    struct FileHeader fileToUpdate;
+    struct stat fileStat;
+    int fileIndex = -1;
+
+    // Open the archive file in read mode
+    int fd = open(archiveFile, O_RDONLY);
+    if (fd == -1)
+    {
+        perror("Error opening archive file");
+        exit(1);
+    }
+
+    // Read the header from the archive file
+    struct Header header;
+    if (read(fd, &header, sizeof(struct Header)) != sizeof(struct Header))
+    {
+        perror("Error reading header from archive file");
+        close(fd);
+        exit(1);
+    }
+    close(fd);
+
+    // Find the header for the specified file
+    for (int i = 0; i < MAX_FILES; i++)
+    {
+        if (strncmp(header.fileList[i].fileName, fileName, MAX_FILENAME_LENGTH) == 0)
+        {
+            fileToUpdate = header.fileList[i];
+            fileIndex = i;
+            break;
+        }
+    }
+
+    if (fileIndex == -1)
+    {
+        printf("File not found in the archive\n");
+        return;
+    }
+
+    // Get the information of the new file
+    if (lstat(fileName, &fileStat) == -1)
+    {
+        perror("Error getting file information");
+        exit(1);
+    }
+
+    if (fileStat.st_size > fileToUpdate.size)
+    {
+        printf("The new file is larger than the current file in the archive\n");
+        return;
+    }
+
+    // Update the content of the file in the archive
+    updateContent(archiveFile, fileName);
+
+    // Update the file header in the archive header
+    fileToUpdate.mode = fileStat.st_mode;
+
+    // Update the start and end positions if the file size has changed
+    if (fileStat.st_size != fileToUpdate.size)
+    {
+        fileToUpdate.end = fileToUpdate.start + fileStat.st_size;
+        fileToUpdate.size = fileStat.st_size;
+    }
+
+    header.fileList[fileIndex] = fileToUpdate;
+
+    // Update the header in the archive file
+    updateHeader(archiveFile, &header);
 }
