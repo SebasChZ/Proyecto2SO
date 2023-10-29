@@ -31,9 +31,9 @@ void extractArchive(const char *archiveFile, const char *outputDirectory, int ve
 void deleteFile(const char *archiveFile, const char *fileName);
 void listFiles(const char *archiveFile);
 void readData(const char *archiveFile);
-void addHeader(int numFiles, int outputFile, const char *fileNames[]);
+void addHeader(int numFiles, int outputFile, const char *fileNames[], int verbose);
 void addHeader_Aux(struct FileHeader newFile);
-void addFileContent(const char *outputFileName, const char *fileNames[], int numFiles);
+void addFileContent(const char *outputFileName, const char *fileNames[], int numFiles, int verbose);
 struct FileHeader getHeader(const char *tarFileName, const char *fileName);
 int openFile(const char *fileName, int mode);
 
@@ -187,7 +187,7 @@ struct FileHeader getHeader(const char *tarFileName, const char *fileName)
     exit(1);
 }
 
-void addFileContent(const char *outputFileName, const char *fileNames[], int numFiles)
+void addFileContent(const char *outputFileName, const char *fileNames[], int numFiles, int verbose)
 {
     int outputFile = open(outputFileName, 1);
     for (int i = 0; i < numFiles; i++)
@@ -197,7 +197,7 @@ void addFileContent(const char *outputFileName, const char *fileNames[], int num
         int file = openFile(fileNames[i], 0);
         if (verbose >= 1)
         {
-            printf("Adding file: %s\n", fileName);
+            printf("Adding file: %s\n", fileNames[i]);
         }                                 // Abre el archivo que se va a escribir en el tar
         struct FileHeader fileInfo = getHeader(outputFileName, fileNames[i]); // Encuentra el archivo en el header
         if (verbose >= 2)
@@ -232,7 +232,7 @@ void addHeader_Aux(struct FileHeader newFile)
     }
 }
 
-void addHeader(int numFiles, int outputFile, const char *fileNames[])
+void addHeader(int numFiles, int outputFile, const char *fileNames[], int verbose)
 {
     const char *filename;
     struct FileHeader fileHeader;
@@ -312,13 +312,13 @@ void createArchive(const char *outputFile, const char *inputFiles[], int numFile
         printf("Adding files to the TAR archive:\n");
     }
 
-    addHeader(numFiles, openFile(outputFile, 1), inputFiles);
+    addHeader(numFiles, openFile(outputFile, 1), inputFiles, verbose);
     if (verbose >= 2)
     {
         printHeader();
     }
     printHeader();
-    addFileContent(outputFile, inputFiles, numFiles);
+    addFileContent(outputFile, inputFiles, numFiles, verbose);
     if (verbose >= 1)
     {
         printf("TAR file created successfully: %s\n", outputFile);
@@ -342,7 +342,7 @@ void extractArchive(const char *archiveFile, const char *outputDirectory, int ve
     // Itera a través de los archivos a extraer
     if (verbose >= 1)
     {
-        printf("Extracting files from %s\n", archiveFile);
+        printf("Extracting files from %s\n\n", archiveFile);
     }
     int numFilesExtracted = 0;
 
@@ -389,7 +389,7 @@ void extractArchive(const char *archiveFile, const char *outputDirectory, int ve
         numFilesExtracted++;
         if (verbose >= 1)
         {
-            printf("Extracted file: %s\n", header.fileList[i].fileName);
+            printf("Extracted file: %s\n\n", header.fileList[i].fileName);
         }
     }
 
