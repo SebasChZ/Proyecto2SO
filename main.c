@@ -22,6 +22,7 @@ struct FileHeader
 struct Header
 {
     struct FileHeader fileList[MAX_FILES];
+    int packed;
 } header;
 
 off_t currentPos = 0;
@@ -42,6 +43,8 @@ void updateHeader(const char *archiveFile, struct Header *updatedHeader);
 void updateContent(const char *archiveFile, const char *fileName);
 int findSpaceForFile(struct FileHeader newFile);
 int getNextHeader(int index);
+void packFile(const char *archiveFile);
+void moveFileContent(int fd, off_t src, off_t dest, off_t size);
 
 int main(int argc, char *argv[])
 {
@@ -100,13 +103,18 @@ int main(int argc, char *argv[])
     {
         readData(archivoSalida);
     }
-    else if (strcmp(opciones, "-rvf") == 0 || strcmp(opciones, "-rv") == 0 || strcmp(opciones, "-rvv") == 0)
+    else if (strcmp(opciones, "-rvf") == 0 || strcmp(opciones, "-rv") == 0 || strcmp(opciones, "-rvv") == 0 || strcmp(opciones, "-r") == 0)
     {
         appendFile(archivoSalida, archivos[0]);
     }
-    else if (strcmp(opciones, "-uvf") == 0 || strcmp(opciones, "-uv") == 0 || strcmp(opciones, "-uvv") == 0)
+    else if (strcmp(opciones, "-uvf") == 0 || strcmp(opciones, "-uv") == 0 || strcmp(opciones, "-uvv") == 0 || strcmp(opciones, "-u") == 0)
     {
         updateFile(archivoSalida, archivos[0]);
+    }
+    else if (strcmp(opciones, "-p") == 0 || strcmp(opciones, "-pvf") == 0 || strcmp(opciones, "-pvv") == 0 || strcmp(opciones, "-pv") == 0)
+    {
+        printf("Packing file...\n");
+        packFile(archivoSalida);
     }
     else
     {
@@ -116,31 +124,6 @@ int main(int argc, char *argv[])
 
     return 0;
 }
-
-// TEST
-/*
-    Funcion para escribir el contenido de un archivo en el tar.
-    tarFileName es el nombre del archivo tar.
-    fileName es el nombre del archivo del cual se grabara el contenido en el body del tar.
-*/
-// void writeFileContentToTar(const char *tarFileName, const char *fileName)
-// {                                                           //! Reemplazar por append
-//     int file = openFile(fileName, 0);                       // Abre el archivo que se va a escribir en el tar
-//     struct File fileInfo = findFile(tarFileName, fileName); // Encuentra el archivo en el header
-//     char buffer[fileInfo.size];                             // Buffer para guardar el contenido del archivo a guardar
-//     read(file, buffer, sizeof(buffer));                     // Lee el contenido del archivo y lo guarda en el buffer
-//     int tarFile = openFile(tarFileName, 0);
-//     lseek(tarFile, fileInfo.start, SEEK_SET); // Coloca el puntero del tar donde de escribir.
-
-//     if (write(tarFile, buffer, sizeof(buffer)) == -1)
-//     {
-//         perror("writeFileContentToTar: Error al escribir en el archivo");
-//         close(tarFile);
-//         exit(1);
-//     }
-//     close(file);
-//     close(tarFile);
-// }
 
 int openFile(const char *fileName, int mode)
 {
@@ -236,6 +219,7 @@ void addFileContent(const char *outputFileName, const char *fileNames[], int num
 
 void addHeader_Aux(struct FileHeader newFile, int index)
 {
+    header.packed = 1;
     if (index == 0)
     {
         for (int i = 0; i < MAX_FILES; i++)
@@ -507,13 +491,30 @@ void listFiles(const char *archiveFile)
     // Lee el encabezado del archivo empaquetado
     read(fd, &header, sizeof(struct Header));
 
-    // Itera a través de los archivos en el encabezado y muestra su información
-    for (int i = 0; i < MAX_FILES; i++)
-    {
+    int iterationSize = MAX_FILES;
+    printf("Packed: %d\n", header.packed);
 
+    if (header.packed == 2)
+    {
+        printf("Se ha empaquetado el archivo\n");
+        int filesCount = 0;
+        // Itera a través de los archivos en el encabezado y cuenta cuántos archivos hay
+        for (int i = 0; i < MAX_FILES; i++)
+        {
+            if (header.fileList[i].fileName[0] != '\0')
+            {
+                filesCount++;
+            }
+        }
+        iterationSize = filesCount;
+    }
+
+    // Itera a través de los archivos en el encabezado y muestra su información
+    for (int i = 0; i < iterationSize; i++)
+    {
         if (header.fileList[i].fileName[0] == '\0')
         {
-            printf("Index deleted: %d\n", i);
+            printf("Index Empty: %d\n", i);
             continue; // Salta los archivos vacíos
         }
 
@@ -529,6 +530,7 @@ void listFiles(const char *archiveFile)
 
     close(fd);
 }
+
 void readData(const char *archiveFile)
 {
     // Abre el archivo empaquetado en modo lectura
@@ -928,4 +930,53 @@ void updateFile(const char *archiveFile, const char *fileName)
 
     // Update the header in the archive file
     updateHeader(archiveFile, &header);
+}
+
+void packFile(const char *archiveFile)
+{
+    // Abre el archivo empaquetado en modo lectura-escritura
+    int fd = open(archiveFile, O_RDWR);
+    if (fd == -1)
+    {
+        perror("Error al abrir el archivo empaquetado");
+        exit(1);
+    }
+
+    // Lee el encabezado del archivo empaquetado
+    struct Header header;
+    if (read(fd, &header, sizeof(struct Header)) != sizeof(struct Header))
+    {
+        perror("Error al leer el encabezado del archivo empaquetado");
+        close(fd);
+        exit(1);
+    }
+
+    // Compacta el header eliminando los espacios en blanco
+    int writeIndex = 0;
+    for (int i = 0; i < MAX_FILES; i++)
+    {
+        if (header.fileList[i].fileName[0] != '\0')
+        {
+            if (writeIndex != i)
+            {
+                header.fileList[writeIndex] = header.fileList[i];
+                memset(&header.fileList[i], 0, sizeof(struct FileHeader));
+            }
+            writeIndex++;
+        }
+    }
+
+    // Escribe el encabezado actualizado al archivo empaquetado
+    lseek(fd, 0, SEEK_SET);
+    header.packed = 2;
+    if (write(fd, &header, sizeof(struct Header)) != sizeof(struct Header))
+    {
+        perror("Error al escribir el encabezado actualizado al archivo empaquetado");
+        close(fd);
+        exit(1);
+    }
+
+    printf("Archivo empaquetado compactado\n");
+
+    close(fd);
 }
