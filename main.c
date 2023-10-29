@@ -539,5 +539,4 @@ void readData(const char *archiveFile)
         write(STDOUT_FILENO, buffer, bytesRead);
     }
 
-    close(fd);
 }
