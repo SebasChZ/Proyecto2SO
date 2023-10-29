@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <stdlib.h>
+//#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -28,7 +28,7 @@ off_t currentPos = 0;
 
 void createArchive(const char *outputFile, const char *inputFiles[], int numFiles, int verbose);
 void extractArchive(const char *archiveFile, const char *outputDirectory, int verbose);
-void deleteFile(const char *archiveFile, const char *fileName);
+void deleteFile(const char *archiveFile, const char *fileName, int verbose);
 void listFiles(const char *archiveFile);
 void readData(const char *archiveFile);
 void addHeader(int numFiles, int outputFile, const char *fileNames[], int verbose);
@@ -84,7 +84,7 @@ int main(int argc, char *argv[])
     }
     else if (strcmp(opciones, "--delete") == 0)
     {
-        deleteFile(archivoSalida, archivos[0]);
+        deleteFile(archivoSalida, archivos[0], verbose);
     }
     else if (strcmp(opciones, "-t") == 0)
     {
@@ -412,7 +412,7 @@ void extractArchive(const char *archiveFile, const char *outputDirectory, int ve
     }
 }
 
-void deleteFile(const char *archiveFile, const char *fileName)
+void deleteFile(const char *archiveFile, const char *fileName, int verbose)
 {
     // Abre el archivo empaquetado en modo lectura y escritura
     int fd = open(archiveFile, O_RDWR);
@@ -443,6 +443,9 @@ void deleteFile(const char *archiveFile, const char *fileName)
         close(fd);
         exit(1);
     }
+    if (verbose >= 1) {
+        printf("Eliminando archivo: %s\n", fileName);
+    }
 
     // Marca el archivo como eliminado en el encabezado
     header.fileList[fileIndex].deleted = 1;
@@ -451,7 +454,9 @@ void deleteFile(const char *archiveFile, const char *fileName)
     off_t start = header.fileList[fileIndex].start;
     off_t end = header.fileList[fileIndex].end;
     size_t fileSize = end - start;
-
+    if (verbose >= 2) {
+        printf("Tamaño del archivo a eliminar: %zu bytes\n", fileSize);
+    }
     // Buffer de ceros del mismo tamaño que el archivo
     char *zeroBuffer = (char *)malloc(fileSize);
     if (zeroBuffer == NULL)
@@ -568,7 +573,7 @@ int getNextHeader(int index)
 }
 
 // Encuentra el primer espacio adecuado en el header para colocar el nuevo archivo
-int findSpaceForFile(struct FileHeader newFile)
+int findSpaceForFile(struct FileHeader newFile, int verbose)
 {
     for (int i = 0; i < MAX_FILES; i++)
     {
@@ -586,7 +591,10 @@ int findSpaceForFile(struct FileHeader newFile)
                 off_t spaceAvailable = header.fileList[nextHeaderIndex].start - 13600;
                 if (spaceAvailable >= newFile.size)
                 {
-                    printf("Se encontró espacio en el header %d con: %ld espacio\n", i + 1, spaceAvailable);
+                    if (verbose >=1)
+                    {
+                      printf("Se encontró espacio en el header %d con: %ld espacio\n", i + 1, spaceAvailable);  
+                    }
                     return i;
                 }
                 else
@@ -610,11 +618,15 @@ int findSpaceForFile(struct FileHeader newFile)
                 else
                 {
                     off_t spaceAvailable = header.fileList[nextHeaderIndex].start - header.fileList[i].end;
-                    printf("Space available: %ld\n", spaceAvailable);
-                    printf("New file size: %ld\n", newFile.size);
+                    if (verbose > 1)
+                    {
+                        printf("Space available: %ld\n", spaceAvailable);
+                        printf("New file size: %ld\n", newFile.size);
+                    }
+                    
+                    
                     if (spaceAvailable >= newFile.size)
                     {
-                        printf("Se encontró espacio en el header %d con: %ld espacio\n", i + 1, spaceAvailable);
                         return i + 1;
                     }
                     else
@@ -793,7 +805,7 @@ void updateContent(const char *archiveFile, const char *fileName)
     close(fileFd);
 }
 
-void appendFile(const char *archiveFile, const char *fileName)
+void appendFile(const char *archiveFile, const char *fileName, int verbose)
 {
     struct FileHeader newFile;
     struct stat fileStat;
@@ -815,6 +827,9 @@ void appendFile(const char *archiveFile, const char *fileName)
         perror("Error al abrir el archivo empaquetado");
         exit(1);
     }
+    if (verbose >= 1) {
+        printf("Agregarndo archivo: %s\n", fileName);
+    }
 
     // Lee el encabezado del archivo empaquetado
     read(fd, &header, sizeof(struct Header));
@@ -823,11 +838,16 @@ void appendFile(const char *archiveFile, const char *fileName)
     int prevHeaderIndex = spaceIndex - 1;
     if (spaceIndex != -1)
     {
-        printf("Se va a colocar en espacio: %d\n", spaceIndex);
+        
+        
+        
         newFile.start = header.fileList[prevHeaderIndex].end;
         newFile.end = newFile.start + newFile.size;
         strncpy(newFile.fileName, fileName, MAX_FILENAME_LENGTH);
         addHeader_Aux(newFile, spaceIndex);
+        if (verbose >= 2) {
+        printf("Colocado en el espacio: %d\n", spaceIndex);
+         }
 
         printHeader();
 
@@ -842,4 +862,9 @@ void appendFile(const char *archiveFile, const char *fileName)
     {
         printf("No hay espacio para el archivo\n");
     }
+    if (verbose >=1)
+    {
+       printf("TAR file apended successfully: %s\n", archiveFile);
+    }
+    
 }
