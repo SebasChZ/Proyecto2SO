@@ -9,6 +9,7 @@
 #define MAX_FILENAME_LENGTH 100
 #define MAX_FILES 100
 
+// Estructuras
 struct FileHeader
 {
     char fileName[MAX_FILENAME_LENGTH];
@@ -25,8 +26,10 @@ struct Header
     int packed;
 } header;
 
+// Variable global que lleva la posicion actual del archivo
 off_t currentPos = 0;
 
+// Funciones
 void createArchive(const char *outputFile, const char *inputFiles[], int numFiles, int verbose);
 void extractArchive(const char *archiveFile, const char *outputDirectory, int verbose);
 void deleteFile(const char *archiveFile, const char *fileName, int verbose);
@@ -73,7 +76,7 @@ int main(int argc, char *argv[])
         int len = strlen(opciones);
         for (int i = len - 1; i >= 0; i--)
         {
-            if (opciones[i] == 'v')
+            if (opciones[i] == 'v' || opciones[i] == 'f')
             {
                 verbose++;
             }
@@ -92,17 +95,13 @@ int main(int argc, char *argv[])
     {
         extractArchive(archivoSalida, "./", verbose); // Puedes especificar un directorio de salida
     }
-    else if (strcmp(opciones, "--d") == 0 || strcmp(opciones, "--dv") == 0 || strcmp(opciones, "--dvv") == 0 || strcmp(opciones, "--dvf") == 0)
+    else if (strcmp(opciones, "--d") == 0 || strcmp(opciones, "--dv") == 0 || strcmp(opciones, "--dvv") == 0 || strcmp(opciones, "--dvf") == 0 || strcmp(opciones, "--delete") == 0)
     {
         deleteFile(archivoSalida, archivos[0], verbose);
     }
     else if (strcmp(opciones, "-t") == 0)
     {
         listFiles(archivoSalida);
-    }
-    else if (strcmp(opciones, "-rvf") == 0 || strcmp(opciones, "-rv") == 0 || strcmp(opciones, "-rvv") == 0)
-    {
-        readData(archivoSalida);
     }
     else if (strcmp(opciones, "-rvf") == 0 || strcmp(opciones, "-rv") == 0 || strcmp(opciones, "-rvv") == 0 || strcmp(opciones, "-r") == 0)
     {
@@ -192,10 +191,10 @@ void addFileContent(const char *outputFileName, const char *fileNames[], int num
     {
         struct stat fileStat;
 
-        int file = openFile(fileNames[i], 0);                                                                   // Abre el archivo que se va a escribir en el tar
+        int file = openFile(fileNames[i], 0);                                 // Abre el archivo que se va a escribir en el tar
         struct FileHeader fileInfo = getHeader(outputFileName, fileNames[i]); // Encuentra el archivo en el header
-        char buffer[fileInfo.size];         // Buffer para guardar el contenido del archivo a guardar
-        read(file, buffer, sizeof(buffer)); // Lee el contenido del archivo y lo guarda en el buffer
+        char buffer[fileInfo.size];                                           // Buffer para guardar el contenido del archivo a guardar
+        read(file, buffer, sizeof(buffer));                                   // Lee el contenido del archivo y lo guarda en el buffer
         int outputFile = openFile(outputFileName, 0);
         lseek(outputFile, fileInfo.start, SEEK_SET); // Coloca el puntero del tar donde de escribir.
 
@@ -314,10 +313,6 @@ void createArchive(const char *outputFile, const char *inputFiles[], int numFile
     }
 
     addHeader(numFiles, openFile(outputFile, 1), inputFiles, verbose);
-    if (verbose >= 2)
-    {
-        headerInfo();
-    }
 
     addFileContent(outputFile, inputFiles, numFiles, verbose);
     if (verbose >= 1)
@@ -406,9 +401,31 @@ void extractArchive(const char *archiveFile, const char *outputDirectory, int ve
     }
 }
 
+void mergeEmptySpaces(int fd, int index)
+{
+    int nextIndex = getNextHeader(index);
+    if (nextIndex == -1)
+        return; // No hay más encabezados
+
+    struct FileHeader *currentHeader = &header.fileList[index + 1];
+    struct FileHeader *nextHeader = &header.fileList[nextIndex - 1];
+
+    if (currentHeader->fileName[0] == '\0' && nextHeader->fileName[0] == '\0')
+    {
+        // Fusiona los espacios vacíos
+        currentHeader->end = nextHeader->end;
+        memset(nextHeader, 0, sizeof(struct FileHeader));
+
+        // Escribe el encabezado actualizado en el archivo empaquetado
+        lseek(fd, 0, SEEK_SET);
+        write(fd, &header, sizeof(struct Header));
+    }
+}
+
 void deleteFile(const char *archiveFile, const char *fileName, int verbose)
 {
     // Abre el archivo empaquetado en modo lectura y escritura
+    printf("Deleting file...\n");
     int fd = open(archiveFile, O_RDWR);
 
     if (fd == -1)
@@ -437,7 +454,8 @@ void deleteFile(const char *archiveFile, const char *fileName, int verbose)
         close(fd);
         exit(1);
     }
-    if (verbose >= 1) {
+    if (verbose >= 1)
+    {
         printf("Deleting file: %s\n", fileName);
     }
 
@@ -448,7 +466,8 @@ void deleteFile(const char *archiveFile, const char *fileName, int verbose)
     off_t start = header.fileList[fileIndex].start;
     off_t end = header.fileList[fileIndex].end;
     size_t fileSize = end - start;
-    if (verbose >= 2) {
+    if (verbose >= 2)
+    {
         printf("File size: %zu bytes\n", fileSize);
     }
     // Buffer de ceros del mismo tamaño que el archivo
@@ -462,7 +481,7 @@ void deleteFile(const char *archiveFile, const char *fileName, int verbose)
 
     memset(zeroBuffer, 0, fileSize);
 
-    // Seek to the start position and write zeros to delete the data
+    // Busca la posición inicial y escribe ceros para eliminar los datos.
     lseek(fd, start, SEEK_SET);
     write(fd, zeroBuffer, fileSize);
 
@@ -476,8 +495,12 @@ void deleteFile(const char *archiveFile, const char *fileName, int verbose)
     lseek(fd, 0, SEEK_SET);
     write(fd, &header, sizeof(struct Header));
 
+    // Fusiona espacios vacíos adyacentes
+    // mergeEmptySpaces(fd, fileIndex);
+
     close(fd);
-    if (verbose >=1 ) {
+    if (verbose >= 1)
+    {
         printf("File deleted: %s\n", fileName);
     }
 }
@@ -497,7 +520,6 @@ void listFiles(const char *archiveFile)
     read(fd, &header, sizeof(struct Header));
 
     int iterationSize = MAX_FILES;
-    printf("Packed: %d\n", header.packed);
 
     if (header.packed == 2)
     {
@@ -517,7 +539,7 @@ void listFiles(const char *archiveFile)
     // Itera a través de los archivos en el encabezado y muestra su información
     for (int i = 0; i < iterationSize; i++)
     {
-        if (header.fileList[i].fileName[0] == '\0')
+        if (header.fileList[i].fileName[0] == '\0' && header.fileList[i].start == 0)
         {
             printf("Index Empty: %d\n", i);
             continue; // Salta los archivos vacíos
@@ -551,7 +573,7 @@ void readData(const char *archiveFile)
     // Lee el encabezado del archivo empaquetado
     read(fd, &header, sizeof(struct Header));
 
-    // Seek past the header to the data section
+    // Busca más allá del encabezado hasta la sección de datos
     lseek(fd, sizeof(struct Header), SEEK_SET);
 
     // Read and print the data
@@ -560,8 +582,8 @@ void readData(const char *archiveFile)
 
     while ((bytesRead = read(fd, buffer, sizeof(buffer))) > 0)
     {
-        // Process the data here, e.g., print it or analyze it
-        // In this example, we'll just print it
+        // Procesar los datos aquí, por ejemplo, imprimirlos o analizarlos
+        // En este ejemplo, simplemente lo imprimiremos
         write(STDOUT_FILENO, buffer, bytesRead);
     }
 
@@ -575,12 +597,12 @@ int getNextHeader(int index)
         if (header.fileList[i].fileName[0] == '\0')
         {
 
-            //printf("Empty header: %d\n", i);
+            // printf("Empty header: %d\n", i);
             continue; // Salta los archivos vacíos
         }
         else
         {
-            //printf("get Next header: %d\n", i);
+            // printf("get Next header: %d\n", i);
             return i;
         }
     }
@@ -592,13 +614,12 @@ int findSpaceForFile(struct FileHeader newFile, int verbose)
 {
     for (int i = 0; i < MAX_FILES; i++)
     {
-        //printf("Finding space...\n");
         if (header.fileList[i].fileName[0] == '\0')
         {
             int nextHeaderIndex = getNextHeader(i);
             if (nextHeaderIndex == -1)
             {
-                printf("No more headers\n");
+                printf("No más header\n");
                 return i;
             }
             else
@@ -606,9 +627,9 @@ int findSpaceForFile(struct FileHeader newFile, int verbose)
                 off_t spaceAvailable = header.fileList[nextHeaderIndex].start - 13600;
                 if (spaceAvailable >= newFile.size)
                 {
-                    if (verbose >=1)
+                    if (verbose >= 1)
                     {
-                      printf("Se encontró espacio en el header %d con: %ld espacio\n", i + 1, spaceAvailable);  
+                        printf("Se encontró espacio en el header %d con: %ld espacio\n", i + 1, spaceAvailable);
                     }
                     return i;
                 }
@@ -622,19 +643,18 @@ int findSpaceForFile(struct FileHeader newFile, int verbose)
         {
             if (header.fileList[i + 1].fileName[0] == '\0')
             {
-                //printf("Next header is empty: %d\n", i + 1);
+                // printf("Next header is empty: %d\n", i + 1);
                 int nextHeaderIndex = getNextHeader(i);
-                //printf("Next header: %d\n", nextHeaderIndex);
+                // printf("Next header: %d\n", nextHeaderIndex);
                 if (nextHeaderIndex == -1)
                 {
-                    //printf("No more headers\n");
+                    // printf("No more headers\n");
                     return i + 1;
                 }
                 else
                 {
                     off_t spaceAvailable = header.fileList[nextHeaderIndex].start - header.fileList[i].end;
 
-                    
                     if (spaceAvailable >= newFile.size)
                     {
                         return i + 1;
@@ -656,7 +676,7 @@ int findSpaceForFile(struct FileHeader newFile, int verbose)
 
 void updateHeader(const char *archiveFile, struct Header *updatedHeader)
 {
-    // Open the archive file in read-write mode
+    // Abre el archivo en modo lectura-escritura
     int fd = open(archiveFile, O_RDWR);
 
     if (fd == -1)
@@ -665,7 +685,7 @@ void updateHeader(const char *archiveFile, struct Header *updatedHeader)
         exit(1);
     }
 
-    // Find gaps between consecutive files
+    // Encuentra espacios entre archivos consecutivos
     for (int i = 0; i < MAX_FILES - 1; i++)
     {
         if (updatedHeader->fileList[i].fileName[0] != '\0' && updatedHeader->fileList[i + 1].fileName[0] != '\0')
@@ -673,32 +693,34 @@ void updateHeader(const char *archiveFile, struct Header *updatedHeader)
             off_t spaceBetweenFiles = updatedHeader->fileList[i + 1].start - updatedHeader->fileList[i].end;
             if (spaceBetweenFiles > 0)
             {
-                // Check if there is an empty header between the two files
+                // Comprueba si hay un encabezado vacío entre los dos archivos
                 int emptyHeaderBetween = 0;
+                int nextHeaderIndex = 0;
                 for (int j = i + 1; j < MAX_FILES && updatedHeader->fileList[j].fileName[0] != '\0'; j++)
                 {
                     if (updatedHeader->fileList[j].fileName[0] == '\0')
                     {
                         emptyHeaderBetween = 1;
+                        nextHeaderIndex = j;
                         break;
                     }
                 }
 
-                // If there is no empty header between the two files, create a gap
+                // Si no hay un encabezado vacío entre los dos archivos, crea un espacio
                 if (!emptyHeaderBetween)
                 {
                     memmove(&updatedHeader->fileList[i + 2], &updatedHeader->fileList[i + 1], sizeof(struct FileHeader) * (MAX_FILES - i - 2));
                     memset(&updatedHeader->fileList[i + 1], 0, sizeof(struct FileHeader));
 
-                    // Update the start and end of the new empty header
+                    // Actualiza el inicio y el final del nuevo encabezado vacío
                     updatedHeader->fileList[i + 1].start = updatedHeader->fileList[i].end;
-                    updatedHeader->fileList[i + 1].end = updatedHeader->fileList[i + 1].start;
+                    updatedHeader->fileList[i + 1].end = updatedHeader->fileList[i + 2].start;
                 }
             }
         }
     }
 
-    // Write the updated header back to the archive file
+    // Escribe el encabezado actualizado nuevamente en el archivo comprimido
     lseek(fd, 0, SEEK_SET);
     if (write(fd, updatedHeader, sizeof(struct Header)) != sizeof(struct Header))
     {
@@ -712,24 +734,24 @@ void updateHeader(const char *archiveFile, struct Header *updatedHeader)
 
 void updateContent(const char *archiveFile, const char *fileName)
 {
-    // Open the archive file in read-write mode
+    // Abre el archivo en modo lectura-escritura
     int fd = open(archiveFile, O_RDWR);
     if (fd == -1)
     {
-        perror("Error opening archive file");
+        perror("Error abriendo archivo");
         exit(1);
     }
 
-    // Read the header from the archive file
+    // Lee el encabezado del archivo comprimido
     struct Header header;
     if (read(fd, &header, sizeof(struct Header)) != sizeof(struct Header))
     {
-        perror("Error reading header from archive file");
+        perror("Error leyendo archivo");
         close(fd);
         exit(1);
     }
 
-    // Find the header for the specified file
+    // Encuentra el encabezado del archivo especificado
     struct FileHeader *fileHeader = NULL;
     for (int i = 0; i < MAX_FILES; i++)
     {
@@ -747,7 +769,7 @@ void updateContent(const char *archiveFile, const char *fileName)
         exit(1);
     }
 
-    // Open the file to be added to the archive
+    // Abre el archivo que se agregará al archivo
     int fileFd = open(fileName, O_RDONLY);
     if (fileFd == -1)
     {
@@ -756,7 +778,7 @@ void updateContent(const char *archiveFile, const char *fileName)
         exit(1);
     }
 
-    // Move to the start position of the file in the archive
+    // Mover a la posición inicial del archivo en el archivo
     if (lseek(fd, fileHeader->start, SEEK_SET) == -1)
     {
         perror("Error seeking in archive file");
@@ -765,7 +787,7 @@ void updateContent(const char *archiveFile, const char *fileName)
         exit(1);
     }
 
-    // Copy the content of the file to the archive
+    // Copia el contenido del archivo al archivo
     char buffer[4096];
     ssize_t bytesRead;
     ssize_t bytesWritten;
@@ -797,7 +819,7 @@ void updateContent(const char *archiveFile, const char *fileName)
         exit(1);
     }
 
-    // If the file is smaller than its header size, fill the remaining space with zeros
+    // Si el archivo es más pequeño que el tamaño del encabezado, llena el espacio restante con ceros
     if (totalBytesWritten < fileHeader->size)
     {
         size_t remainingBytes = fileHeader->size - totalBytesWritten;
@@ -837,7 +859,8 @@ void appendFile(const char *archiveFile, const char *fileName, int verbose)
         perror("Error al abrir el archivo empaquetado");
         exit(1);
     }
-    if (verbose >= 1) {
+    if (verbose >= 1)
+    {
         printf("Appending File: %s\n", fileName);
     }
 
@@ -848,21 +871,18 @@ void appendFile(const char *archiveFile, const char *fileName, int verbose)
     int prevHeaderIndex = spaceIndex - 1;
     if (spaceIndex != -1)
     {
-        
-        
-        
+
         newFile.start = header.fileList[prevHeaderIndex].end;
         newFile.end = newFile.start + newFile.size;
         strncpy(newFile.fileName, fileName, MAX_FILENAME_LENGTH);
         addHeader_Aux(newFile, spaceIndex);
-        if (verbose >= 2) {
+        if (verbose >= 2)
+        {
             printf("Placed on index: %d\n", spaceIndex);
         }
 
-
-        // Update the header in the archive file
+        // Actualiza el encabezado en el archivo comprimido
         updateHeader(archiveFile, &header);
-
 
         updateContent(archiveFile, fileName);
     }
@@ -870,11 +890,10 @@ void appendFile(const char *archiveFile, const char *fileName, int verbose)
     {
         printf("No hay espacio para el archivo\n");
     }
-    if (verbose >=1)
+    if (verbose >= 1)
     {
-       printf("TAR file apended successfully: %s\n", archiveFile);
+        printf("TAR file apended successfully: %s\n", archiveFile);
     }
-    
 }
 
 void updateFile(const char *archiveFile, const char *fileName, int verbose)
@@ -883,32 +902,32 @@ void updateFile(const char *archiveFile, const char *fileName, int verbose)
     struct stat fileStat;
     int fileIndex = -1;
 
-    // Open the archive file in read mode
+    // Abre el archivo en modo lectura
     int fd = open(archiveFile, O_RDONLY);
     if (fd == -1)
     {
-        perror("Error opening archive file");
+        perror("Error abriendo archivo");
         exit(1);
     }
     if (verbose == 1)
     {
-        printf("Updating File.\n");  
+        printf("Updating File.\n");
     }
-    if (verbose >=2)
+    if (verbose >= 2)
     {
-        printf("Updating File: %s\n", fileName);  
+        printf("Updating File: %s\n", fileName);
     }
-    // Read the header from the archive file
+    // Lee el encabezado del archivo comprimido
     struct Header header;
     if (read(fd, &header, sizeof(struct Header)) != sizeof(struct Header))
     {
-        perror("Error reading header from archive file");
+        perror("Error leyendo archivo");
         close(fd);
         exit(1);
     }
     close(fd);
 
-    // Find the header for the specified file
+    // Encuentra el encabezado del archivo especificado
     for (int i = 0; i < MAX_FILES; i++)
     {
         if (strncmp(header.fileList[i].fileName, fileName, MAX_FILENAME_LENGTH) == 0)
@@ -921,30 +940,30 @@ void updateFile(const char *archiveFile, const char *fileName, int verbose)
 
     if (fileIndex == -1)
     {
-        printf("File not found in the archive\n");
+        printf("Archivo no encontrado\n");
         return;
     }
 
     // Get the information of the new file
     if (lstat(fileName, &fileStat) == -1)
     {
-        perror("Error getting file information");
+        perror("Error obteniendo información del archivo");
         exit(1);
     }
 
     if (fileStat.st_size > fileToUpdate.size)
     {
-        printf("The new file is larger than the current file in the archive\n");
+        printf("El nuevo archivo es muy grande\n");
         return;
     }
 
-    // Update the content of the file in the archive
+    // Actualiza el contenido del archivo en el archivo
     updateContent(archiveFile, fileName);
 
-    // Update the file header in the archive header
+    // Actualiza el encabezado del archivo en el encabezado del archivo
     fileToUpdate.mode = fileStat.st_mode;
 
-    // Update the start and end positions if the file size has changed
+    // Actualiza las posiciones inicial y final si el tamaño del archivo ha cambiado
     if (fileStat.st_size != fileToUpdate.size)
     {
         fileToUpdate.end = fileToUpdate.start + fileStat.st_size;
@@ -953,11 +972,11 @@ void updateFile(const char *archiveFile, const char *fileName, int verbose)
 
     header.fileList[fileIndex] = fileToUpdate;
 
-    // Update the header in the archive file
+    // Actualiza el encabezado en el archivo comprimido
     updateHeader(archiveFile, &header);
-    if (verbose >=1)
+    if (verbose >= 1)
     {
-        printf("Update completed\n");  
+        printf("Update completed\n");
     }
 }
 
@@ -972,11 +991,11 @@ void packFile(const char *archiveFile, int verbose)
     }
 
     // Lee el encabezado del archivo empaquetado
-    if (verbose >=1)
+    if (verbose >= 1)
     {
         printf("Packing\n");
     }
-    
+
     struct Header header;
     if (read(fd, &header, sizeof(struct Header)) != sizeof(struct Header))
     {
@@ -1010,7 +1029,7 @@ void packFile(const char *archiveFile, int verbose)
         exit(1);
     }
 
-    if (verbose >=1)
+    if (verbose >= 1)
     {
         printf("Pack completed.\n");
     }
