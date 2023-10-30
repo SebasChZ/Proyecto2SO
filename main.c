@@ -849,8 +849,8 @@ void appendFile(const char *archiveFile, const char *fileName, int verbose)
         strncpy(newFile.fileName, fileName, MAX_FILENAME_LENGTH);
         addHeader_Aux(newFile, spaceIndex);
         if (verbose >= 2) {
-        printf("Placed on index: %d\n", spaceIndex);
-         }
+            printf("Placed on index: %d\n", spaceIndex);
+        }
 
 
         // Update the header in the archive file
