@@ -22,7 +22,7 @@ struct FileHeader
 struct Header
 {
     struct FileHeader fileList[MAX_FILES];
-    int packed;
+    int packed; // Variable para saber si se ha hecho pack o no
 } header;
 
 off_t currentPos = 0;
